@@ -1,8 +1,9 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Capacitor } from '@capacitor/core';
 import { Camera, CameraResultType, CameraSource, Photo } from '@capacitor/camera';
 import { Storage } from '@capacitor/storage';
 import { Filesystem, Directory } from '@capacitor/filesystem';
+import { isPlatform } from '@ionic/react';
 
 export interface UserPhoto {
    filepath: string;
@@ -14,7 +15,18 @@ export const usePhotoGallery = () => {
    const [photos, setPhotos] = useState<UserPhoto[]>([]);
 
    const savePicture = async (photo: Photo, fileName: string): Promise<UserPhoto> => {
-      const base64Data = await base64FromPath(photo.webPath!);
+      let base64Data: string;
+
+      // "hybrid" will detect Cordova or Capacitor
+
+      if (isPlatform('hybrid')) {
+         const file = await Filesystem.readFile({
+            path: photo.path,
+         });
+         base64Data = file.data;
+      } else {
+         base64Data = await base64FromPath(photo.webPath!);
+      }
 
       const savedFile = await Filesystem.writeFile({
          path: fileName,
@@ -22,11 +34,21 @@ export const usePhotoGallery = () => {
          directory: Directory.Data,
       });
 
-      // Use webPath to display the new image instead of base64 since it's already loaded into memory
-      return {
-         filepath: fileName,
-         webviewPath: photo.webPath,
-      };
+      if (isPlatform('hybrid')) {
+         // Display the new image by rewriting the 'file://' path to HTTP
+         // details: https://ionicframework.com/docs/building/webview#file-protocol
+
+         return {
+            filepath: savedFile.uri,
+            webviewPath: Capacitor.convertFileSrc(savedFile.uri),
+         };
+      } else {
+         // Use webPath to display the new image instead of base64 since it's already loaded into memory
+         return {
+            filepath: fileName,
+            webviewPath: photo.webPath,
+         };
+      }
    };
 
    // load photos from storage
@@ -35,14 +57,17 @@ export const usePhotoGallery = () => {
          const { value } = await Storage.get({ key: PHOTO_STORAGE });
          const photosInStorage = (value ? JSON.parse(value) : []) as UserPhoto[];
 
-         for (let photo of photosInStorage) {
-            const file = await Filesystem.readFile({
-               path: photo.filepath,
-               directory: Directory.Data,
-            });
+         // If running on the web...
+         if (!isPlatform('hybrid')) {
+            for (let photo of photosInStorage) {
+               const file = await Filesystem.readFile({
+                  path: photo.filepath,
+                  directory: Directory.Data,
+               });
 
-            // Web platform only: Load the photo as base64 data
-            photo.webviewPath = `data:image/jpeg;base64,${file.data}`;
+               // Web platform only: Load the photo as base64 data
+               photo.webviewPath = `data:image/jpeg;base64,${file.data}`;
+            }
          }
 
          setPhotos(photosInStorage);
