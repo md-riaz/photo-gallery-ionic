@@ -50,6 +50,23 @@ export const usePhotoGallery = () => {
       }
    };
 
+   const deletePhoto = async (photo: UserPhoto) => {
+      // remove this photo from the Photos reference data array
+      const newPhotos = photos.filter((p) => p.filepath !== photo.filepath);
+
+      // update photos array cache by overwriting the existing photo array
+      Storage.set({ key: PHOTO_STORAGE, value: JSON.stringify(newPhotos) });
+
+      // delete photo file from filesystem
+      const filename = photo.filepath.substr(photo.filepath.lastIndexOf('/') + 1);
+      await Filesystem.deleteFile({
+         path: filename,
+         directory: Directory.Data,
+      });
+
+      setPhotos(newPhotos);
+   };
+
    // load photos from storage
    useEffect(() => {
       const loadSaved = async () => {
@@ -91,8 +108,9 @@ export const usePhotoGallery = () => {
    };
 
    return {
-      takePhoto,
       photos,
+      takePhoto,
+      deletePhoto,
    };
 };
 
